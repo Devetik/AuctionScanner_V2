@@ -1,8 +1,8 @@
-local MyAddon = CreateFrame("Frame", "AuctionScanner")
+local MyAddon = CreateFrame("Frame", "AuctionScanner_V2")
 
 -- Table pour stocker les paramètres persistants
-if not AuctionScannerDB then
-    AuctionScannerDB = {
+if not AuctionScanner_V2DB then
+    AuctionScanner_V2DB = {
         targetItemName = "Elemental Earth",
         maxPrice = 7.00 * 10000,
         minStackSize = 2,
@@ -12,16 +12,16 @@ if not AuctionScannerDB then
 end
 
 -- S'assurer que tous les champs existent
-AuctionScannerDB.targetItemName = AuctionScannerDB.targetItemName or "Elemental Earth"
-AuctionScannerDB.maxPrice = AuctionScannerDB.maxPrice or (7.00 * 10000)
-AuctionScannerDB.minStackSize = AuctionScannerDB.minStackSize or 2
-AuctionScannerDB.ignoredAuctions = AuctionScannerDB.ignoredAuctions or {}
-AuctionScannerDB.sortDescending = AuctionScannerDB.sortDescending or false
+AuctionScanner_V2DB.targetItemName = AuctionScanner_V2DB.targetItemName or "Elemental Earth"
+AuctionScanner_V2DB.maxPrice = AuctionScanner_V2DB.maxPrice or (7.00 * 10000)
+AuctionScanner_V2DB.minStackSize = AuctionScanner_V2DB.minStackSize or 2
+AuctionScanner_V2DB.ignoredAuctions = AuctionScanner_V2DB.ignoredAuctions or {}
+AuctionScanner_V2DB.sortDescending = AuctionScanner_V2DB.sortDescending or false
 
 -- Variables pour configurer l'objet recherché
-local targetItemName = AuctionScannerDB.targetItemName
-local maxPrice = AuctionScannerDB.maxPrice
-local minStackSize = AuctionScannerDB.minStackSize
+local targetItemName = AuctionScanner_V2DB.targetItemName
+local maxPrice = AuctionScanner_V2DB.maxPrice
+local minStackSize = AuctionScanner_V2DB.minStackSize
 local continuousScanTicker = nil -- Variable pour stocker le ticker continu
 local awaitingPurchase = false -- Indique si une enchère est en attente d'achat
 local isSorting = false -- Drapeau pour éviter la récursion dans le tri
@@ -39,7 +39,7 @@ MyAddon:RegisterEvent("AUCTION_ITEM_LIST_UPDATE")
 MyAddon:RegisterEvent("AUCTION_HOUSE_CLOSED")
 
 local function printMessage(message)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[MyAuctionScanner]:|r " .. message)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[AuctionScanner_V2]:|r " .. message)
 end
 
 -- Fonction pour formater le prix avec les icônes de monnaie
@@ -62,7 +62,7 @@ local function createResultWindow()
             awaitingPurchase = false
             -- Ne redémarre plus automatiquement le scan
             if configWindow and configWindow.scanButton then
-                configWindow.scanButton:SetText("Start Scan")
+                configWindow.scanButton:SetText("Scanner l'HV")
             end
         end)
 
@@ -95,7 +95,7 @@ local function createResultWindow()
             awaitingPurchase = false
             -- Ne redémarre plus automatiquement le scan
             if configWindow and configWindow.scanButton then
-                configWindow.scanButton:SetText("Start Scan")
+                configWindow.scanButton:SetText("Scanner l'HV")
             end
         end)
         resultWindow.closeButton:Show() -- S'assurer que le bouton est visible par défaut
@@ -140,19 +140,19 @@ local function showResult(name, stackSize, pricePerUnit, buyoutPrice, auctionInd
         awaitingPurchase = false
         -- Ne redémarre plus automatiquement le scan
         if configWindow and configWindow.scanButton then
-            configWindow.scanButton:SetText("Start Scan")
+            configWindow.scanButton:SetText("Scanner l'HV")
         end
     end)
 
     resultWindow.ignoreButton:SetScript("OnClick", function()
         -- S'assurer que ignoredAuctions existe
-        if not AuctionScannerDB.ignoredAuctions then
-            AuctionScannerDB.ignoredAuctions = {}
+        if not AuctionScanner_V2DB.ignoredAuctions then
+            AuctionScanner_V2DB.ignoredAuctions = {}
         end
         
         -- Créer une clé unique pour cette enchère
         local auctionKey = string.format("%s_%d_%d", name, buyoutPrice, stackSize)
-        AuctionScannerDB.ignoredAuctions[auctionKey] = true
+        AuctionScanner_V2DB.ignoredAuctions[auctionKey] = true
         printMessage("Cette enchère a été ignorée.")
         
         resultWindow:Hide()
@@ -185,47 +185,51 @@ local function scanFirstPage()
         return
     end
 
-    for i = 1, numBatchAuctions do
+    -- Afficher les 10 derniers objets mis en vente
+    local displayCount = math.min(10, numBatchAuctions)
+    local message = "Derniers objets mis en vente:\n"
+    
+    for i = 1, displayCount do
         local name, _, stackSize, _, _, _, _, _, _, buyoutPrice, _, _, _, _, owner = GetAuctionItemInfo("list", i)
         local timeLeft = GetAuctionItemTimeLeft("list", i)
-
+        
         if name and buyoutPrice and buyoutPrice > 0 then
             local pricePerUnit = buyoutPrice / stackSize
-
-            -- Vérifie si l'enchère respecte les critères
-            if name == targetItemName and stackSize >= minStackSize and pricePerUnit <= maxPrice then
-                -- Vérifie si l'enchère n'est pas dans la liste des ignorées
-                local auctionKey = string.format("%s_%d_%d", name, buyoutPrice, stackSize)
-                if not (AuctionScannerDB.ignoredAuctions and AuctionScannerDB.ignoredAuctions[auctionKey]) then
-                    printMessage(string.format("Found matching auction: %s (x%d) Unit Price: %dg %ds %dc", 
-                        name,
-                        stackSize,
-                        math.floor(pricePerUnit / 10000),
-                        math.floor((pricePerUnit % 10000) / 100),
-                        math.floor(pricePerUnit % 100)))
-
-                    stopContinuousScan()
-                    PlaySound(5274) -- Jouer un son lorsque l'enchère correspondante est trouvée
-                    awaitingPurchase = true
-                    showResult(name, stackSize, pricePerUnit, buyoutPrice, i, owner, timeLeft)
-                    return
-                end
+            local timeLeftText = ""
+            if timeLeft == 1 then
+                timeLeftText = "Court"
+            elseif timeLeft == 2 then
+                timeLeftText = "Moyen"
+            elseif timeLeft == 3 then
+                timeLeftText = "Long"
+            elseif timeLeft == 4 then
+                timeLeftText = "Très long"
             end
+            
+            message = message .. string.format("%s (x%d) - %s - %dg %ds %dc - Vendeur: %s\n",
+                name,
+                stackSize,
+                timeLeftText,
+                math.floor(pricePerUnit / 10000),
+                math.floor((pricePerUnit % 10000) / 100),
+                math.floor(pricePerUnit % 100),
+                owner or "Inconnu")
         end
     end
+    
+    printMessage(message)
 end
 
 local function startContinuousScan()
     stopContinuousScan() -- Stop any ongoing scan before starting a new one
     
-    -- Faire une première recherche avant de démarrer le ticker
-    QueryAuctionItems(targetItemName, nil, nil, 0, nil, nil, false, 0)
+    -- Faire une première recherche sans filtre et sans tri
+    QueryAuctionItems("", nil, nil, 0, 0, 0, 0, 0, 0, 0)
     
-    continuousScanTicker = C_Timer.NewTicker(1, function()
-        QueryAuctionItems(targetItemName, nil, nil, 0, nil, nil, false, 0)
+    continuousScanTicker = C_Timer.NewTicker(2, function()
+        QueryAuctionItems("", nil, nil, 0, 0, 0, 0, 0, 0, 0)
     end)
 end
-MyAddon.startContinuousScan = startContinuousScan
 
 local function createConfigWindow()
     if not configWindow then
@@ -244,10 +248,10 @@ local function createConfigWindow()
         configWindow.itemNameEdit:SetSize(160, 20)
         configWindow.itemNameEdit:SetPoint("TOP", configWindow.title, "BOTTOM", 0, -20)
         configWindow.itemNameEdit:SetAutoFocus(false)
-        configWindow.itemNameEdit:SetText(AuctionScannerDB.targetItemName)
+        configWindow.itemNameEdit:SetText(AuctionScanner_V2DB.targetItemName)
         configWindow.itemNameEdit:SetScript("OnTextChanged", function(self)
             local text = self:GetText()
-            AuctionScannerDB.targetItemName = text
+            AuctionScanner_V2DB.targetItemName = text
             targetItemName = text
         end)
         configWindow.itemNameEdit:SetScript("OnEditFocusLost", function(self)
@@ -261,7 +265,7 @@ local function createConfigWindow()
                 local itemName = GetItemInfo(itemID)
                 if itemName then
                     self:SetText(itemName)
-                    AuctionScannerDB.targetItemName = itemName
+                    AuctionScanner_V2DB.targetItemName = itemName
                     targetItemName = itemName
                     ClearCursor()
                 end
@@ -275,7 +279,7 @@ local function createConfigWindow()
                     local itemName = GetItemInfo(itemID)
                     if itemName then
                         self:SetText(itemName)
-                        AuctionScannerDB.targetItemName = itemName
+                        AuctionScanner_V2DB.targetItemName = itemName
                         targetItemName = itemName
                         ClearCursor()
                     end
@@ -294,11 +298,11 @@ local function createConfigWindow()
         configWindow.priceEdit:SetSize(100, 20)
         configWindow.priceEdit:SetPoint("TOPLEFT", configWindow.itemNameEdit, "BOTTOMLEFT", 0, -20)
         configWindow.priceEdit:SetAutoFocus(false)
-        configWindow.priceEdit:SetText(tostring(AuctionScannerDB.maxPrice/10000))
+        configWindow.priceEdit:SetText(tostring(AuctionScanner_V2DB.maxPrice/10000))
         configWindow.priceEdit:SetScript("OnTextChanged", function(self)
             local price = tonumber(self:GetText())
             if price then
-                AuctionScannerDB.maxPrice = price * 10000
+                AuctionScanner_V2DB.maxPrice = price * 10000
                 maxPrice = price * 10000
                 -- Mettre à jour le texte formaté
                 configWindow.priceText:SetText(formatPrice(price))
@@ -312,18 +316,18 @@ local function createConfigWindow()
         configWindow.priceText = configWindow:CreateFontString(nil, "OVERLAY")
         configWindow.priceText:SetFontObject("GameFontNormal")
         configWindow.priceText:SetPoint("LEFT", configWindow.priceEdit, "RIGHT", 5, 0)
-        configWindow.priceText:SetText(formatPrice(AuctionScannerDB.maxPrice/10000))
+        configWindow.priceText:SetText(formatPrice(AuctionScanner_V2DB.maxPrice/10000))
 
         -- Zone de texte pour la quantité minimum
         configWindow.stackEdit = CreateFrame("EditBox", nil, configWindow, "InputBoxTemplate")
         configWindow.stackEdit:SetSize(100, 20)
         configWindow.stackEdit:SetPoint("TOPLEFT", configWindow.priceEdit, "BOTTOMLEFT", 0, -10)
         configWindow.stackEdit:SetAutoFocus(false)
-        configWindow.stackEdit:SetText(tostring(AuctionScannerDB.minStackSize))
+        configWindow.stackEdit:SetText(tostring(AuctionScanner_V2DB.minStackSize))
         configWindow.stackEdit:SetScript("OnTextChanged", function(self)
             local stack = tonumber(self:GetText())
             if stack then
-                AuctionScannerDB.minStackSize = stack
+                AuctionScanner_V2DB.minStackSize = stack
                 minStackSize = stack
             end
         end)
@@ -335,16 +339,16 @@ local function createConfigWindow()
         configWindow.scanButton = CreateFrame("Button", nil, configWindow, "UIPanelButtonTemplate")
         configWindow.scanButton:SetSize(160, 25)
         configWindow.scanButton:SetPoint("BOTTOM", configWindow, "BOTTOM", 0, 10)
-        configWindow.scanButton:SetText("Start Scan")
+        configWindow.scanButton:SetText("Scanner l'HV")
         configWindow.scanButton:SetScript("OnClick", function()
             if continuousScanTicker then
                 stopContinuousScan()
-                configWindow.scanButton:SetText("Start Scan")
+                configWindow.scanButton:SetText("Scanner l'HV")
             else
-                printMessage("Starting continuous scan for " .. targetItemName .. "...")
+                printMessage("Démarrage du scan de l'hôtel des ventes...")
                 createResultWindow()
                 startContinuousScan()
-                configWindow.scanButton:SetText("Stop Scan")
+                configWindow.scanButton:SetText("Arrêter le scan")
             end
         end)
 
@@ -370,10 +374,10 @@ local function createConfigWindow()
             
             printMessage(string.format(
                 "Configuration mise à jour: '%s' sous %dg %ds par unité avec taille de pile >= %d",
-                AuctionScannerDB.targetItemName,
-                math.floor(AuctionScannerDB.maxPrice / 10000),
-                math.floor((AuctionScannerDB.maxPrice % 10000) / 100),
-                AuctionScannerDB.minStackSize
+                AuctionScanner_V2DB.targetItemName,
+                math.floor(AuctionScanner_V2DB.maxPrice / 10000),
+                math.floor((AuctionScanner_V2DB.maxPrice % 10000) / 100),
+                AuctionScanner_V2DB.minStackSize
             ))
         end)
     end
@@ -386,24 +390,24 @@ local function setupUI()
     -- Mettre à jour le texte du bouton en fonction de l'état du scan
     if configWindow.scanButton then
         if continuousScanTicker then
-            configWindow.scanButton:SetText("Stop Scan")
+            configWindow.scanButton:SetText("Arrêter le scan")
         else
-            configWindow.scanButton:SetText("Start Scan")
+            configWindow.scanButton:SetText("Scanner l'HV")
         end
     end
 end
 
 local function onEvent(self, event, ...)
-    if event == "ADDON_LOADED" and ... == "MyAddon" then
+    if event == "ADDON_LOADED" and ... == "AuctionScanner_V2" then
         -- Charger les valeurs sauvegardées
-        targetItemName = AuctionScannerDB.targetItemName
-        maxPrice = AuctionScannerDB.maxPrice
-        minStackSize = AuctionScannerDB.minStackSize
+        targetItemName = AuctionScanner_V2DB.targetItemName
+        maxPrice = AuctionScanner_V2DB.maxPrice
+        minStackSize = AuctionScanner_V2DB.minStackSize
         hasSortedThisSession = false -- Réinitialiser le flag au chargement de l'addon
 
-        SLASH_MYADDON1 = "/setscan"
+        SLASH_AUCTIONSCANNER_V21 = "/setscan"
 
-        SlashCmdList["MYADDON"] = function(msg)
+        SlashCmdList["AUCTIONSCANNER_V2"] = function(msg)
             local name, price, stack = string.match(msg, "^(%S+) (%d+) (%d+)")
             if name and price and stack then
                 targetItemName = name
@@ -421,20 +425,13 @@ local function onEvent(self, event, ...)
         end
     elseif event == "AUCTION_HOUSE_SHOW" then
         setupUI()
-        -- Trier une seule fois par session
-        if not hasSortedThisSession then
-            C_Timer.After(0.5, function()
-                SortAuctionItems("list", "unitprice")
-                hasSortedThisSession = true
-            end)
-        end
     elseif event == "AUCTION_HOUSE_CLOSED" then
         stopContinuousScan()
         if configWindow then
             configWindow:Hide()
         end
         -- Réinitialiser la liste des enchères ignorées
-        AuctionScannerDB.ignoredAuctions = {}
+        AuctionScanner_V2DB.ignoredAuctions = {}
         printMessage("Liste des enchères ignorées réinitialisée")
     elseif event == "AUCTION_ITEM_LIST_UPDATE" then
         scanFirstPage()

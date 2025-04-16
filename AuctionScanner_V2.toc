@@ -1,8 +1,8 @@
 ## Interface: 11505
-## Title: AuctionScanner
+## Title: AuctionScanner_V2
 ## Author: Devetik
 ## Notes: Addon permettant de scanner l'hotel des ventes
-## SavedVariables: AuctionScannerDB
+## SavedVariables: AuctionScanner_V2DB
 ## Version: 0.0.1
 
-AuctionScanner.lua
+AuctionScanner_V2.lua
